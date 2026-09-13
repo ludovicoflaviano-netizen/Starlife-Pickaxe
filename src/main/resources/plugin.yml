@@ -1,0 +1,7 @@
+name: StarlifePickaxe
+version: ${version}
+main: com.starlife.pickaxe.StarlifePickaxePlugin
+api-version: '1.21.11'
+author: Starlife
+
+description: Adds the Starlife Pickaxe, crafted with Nether Stars.
