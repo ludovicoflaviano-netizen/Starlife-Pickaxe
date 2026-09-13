@@ -7,6 +7,7 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -14,13 +15,12 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.RecipeChoice;
 import org.bukkit.inventory.ShapedRecipe;
+import org.bukkit.inventory.meta.Damageable;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 public final class StarlifePickaxePlugin extends JavaPlugin implements Listener {
     private NamespacedKey itemKey;
@@ -50,9 +50,12 @@ public final class StarlifePickaxePlugin extends JavaPlugin implements Listener 
         meta.setDisplayName(ChatColor.AQUA + "Starlife Pickaxe");
         meta.setLore(List.of(
                 ChatColor.GRAY + "Forged from three Nether Stars.",
-                ChatColor.WHITE + "3x3 mining",
+                ChatColor.WHITE + "3x3 square mining",
                 ChatColor.WHITE + "Netherite speed & durability"
         ));
+        if (meta instanceof Damageable damageable) {
+            damageable.setMaxDamage(2031);
+        }
         meta.getPersistentDataContainer().set(itemKey, PersistentDataType.BYTE, (byte) 1);
         pickaxe.setItemMeta(meta);
         return pickaxe;
@@ -67,31 +70,39 @@ public final class StarlifePickaxePlugin extends JavaPlugin implements Listener 
     @EventHandler(ignoreCancelled = true)
     public void onBlockBreak(BlockBreakEvent event) {
         Player player = event.getPlayer();
-        if (!isStarlifePickaxe(player.getInventory().getItemInMainHand())) return;
+        ItemStack tool = player.getInventory().getItemInMainHand();
+        if (!isStarlifePickaxe(tool)) return;
 
         Block center = event.getBlock();
-        int dx = 0, dy = 0, dz = 0;
-        switch (player.getFacing()) {
-            case NORTH, SOUTH -> { dx = 1; dy = 1; }
-            case EAST, WEST -> { dy = 1; dz = 1; }
-            case UP, DOWN -> { dx = 1; dz = 1; }
+        BlockFace face = player.getTargetBlockFace(5);
+        if (face == null) face = player.getFacing();
+
+        BlockFace first;
+        BlockFace second;
+        switch (face) {
+            case NORTH, SOUTH -> { first = BlockFace.EAST; second = BlockFace.UP; }
+            case EAST, WEST -> { first = BlockFace.SOUTH; second = BlockFace.UP; }
+            case UP, DOWN -> { first = BlockFace.EAST; second = BlockFace.SOUTH; }
+            default -> { first = BlockFace.EAST; second = BlockFace.UP; }
         }
 
-        Set<Block> blocks = new HashSet<>();
+        // Always break exactly the 3x3 square centered on the original block.
         for (int a = -1; a <= 1; a++) {
             for (int b = -1; b <= 1; b++) {
-                Block block = center.getRelative(dx * a, dy * a + (dy == 0 ? 0 : dy * b), dz * b + (dz == 0 ? 0 : dz * a));
-                if (block.equals(center) || !block.isEmpty()) blocks.add(block);
+                if (a == 0 && b == 0) continue;
+                Block block = center.getRelative(first, a).getRelative(second, b);
+                if (block.getType().isAir() || !block.getType().isBlock()) continue;
+                if (block.getType().getHardness() < 0) continue;
+                if (!block.breakNaturally(tool)) continue;
+                block.getWorld().spawnParticle(Particle.WHITE_ASH,
+                        block.getLocation().add(0.5, 0.5, 0.5), 10,
+                        0.25, 0.25, 0.25, 0.01);
             }
         }
-        blocks.remove(center);
 
-        for (Block block : blocks) {
-            if (block.getType().isAir()) continue;
-            if (!player.getGameMode().isInvulnerable()) block.breakNaturally(player.getInventory().getItemInMainHand());
-            block.getWorld().spawnParticle(Particle.WHITE_ASH, block.getLocation().add(0.5, 0.5, 0.5), 10, 0.25, 0.25, 0.25, 0.01);
-        }
-        center.getWorld().spawnParticle(Particle.WHITE_ASH, center.getLocation().add(0.5, 0.5, 0.5), 16, 0.3, 0.3, 0.3, 0.01);
+        center.getWorld().spawnParticle(Particle.WHITE_ASH,
+                center.getLocation().add(0.5, 0.5, 0.5), 16,
+                0.3, 0.3, 0.3, 0.01);
         center.getWorld().playSound(center.getLocation(), Sound.BLOCK_STONE_BREAK, 0.7f, 1.15f);
     }
 }
